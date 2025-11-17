@@ -1,0 +1,26 @@
+[MESSAGES CONTROL]
+# 忽略特定的警告
+disable=logging-fstring-interpolation,
+        # 其他可能需要忽略的警告
+        line-too-long,
+        too-many-locals,
+        too-many-arguments,
+        too-many-instance-attributes,
+        import-error,
+        no-member
+
+[FORMAT]
+# 最大行长度
+max-line-length=120
+
+[BASIC]
+# 好的变量名模式
+good-names=i,j,k,ex,Run,_,x,y,z,img,src,dst,w,h,cv2,np
+
+[DESIGN]
+# 最大参数数量
+max-args=8
+# 最大局部变量数量
+max-locals=20
+# 最大属性数量
+max-attributes=12

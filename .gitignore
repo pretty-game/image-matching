@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.cache
+*.log
+cache*/
+reports/
+*.pkl
+*.joblib
+.idea/
+*.swp
+*.swo
+*~
+temp/
+tmp/
+*.tmp

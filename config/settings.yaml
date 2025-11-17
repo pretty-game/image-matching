@@ -1,0 +1,38 @@
+# 游戏资产图片聚类与匹配系统配置文件
+
+# 游戏资产目录配置
+data_sources:
+  # 图片目录列表（按优先级排序）
+  asset_directories:
+    - "C:\\YourPathToImage"
+
+feature_extraction:
+  # 图片预处理统一尺寸
+  image_size: 256
+  # DCT低频分量提取尺寸（控制特征精度）
+  dct_size: 32
+  # 最终特征维度
+  feature_dim: 500
+
+clustering:
+  # 聚类数量
+  n_clusters: 4000
+  # 批处理大小
+  batch_size: 1000
+
+matching:
+  # 默认返回的相似图片数量
+  default_top_k: 10
+  # 最大搜索簇数量
+  max_search_clusters: 1
+  # 相似性阈值配置
+  similarity_threshold: 0.9
+
+performance:
+  # 缓存目录
+  cache_dir: "./cache"
+
+# 日志配置
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"

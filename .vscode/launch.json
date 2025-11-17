@@ -1,0 +1,89 @@
+{
+  "configurations": [
+
+    {
+      "type": "debugpy",
+      "request": "launch",
+      "name": "Debug App - Update",
+      "program": "${workspaceFolder}/app.py",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "args": ["update"],
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      }
+    },
+    {
+      "type": "debugpy",
+      "request": "launch",
+      "name": "Debug App - Report",
+      "program": "${workspaceFolder}/app.py",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "args": ["report"],
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      }
+    },
+    {
+      "type": "debugpy",
+      "request": "launch",
+      "name": "Debug App - Query",
+      "program": "${workspaceFolder}/app.py",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "args": ["query", "--image", "${input:imagePath}", "--top-k", "${input:topK}"],
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      }
+    },
+    {
+      "type": "debugpy",
+      "request": "launch",
+      "name": "Debug Main.py",
+      "program": "${workspaceFolder}/src/main.py",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      }
+    }
+  ],
+  "inputs": [
+    {
+      "type": "pickString",
+      "id": "command",
+      "description": "Select command to run",
+      "options": [
+        {
+          "label": "Update Library",
+          "value": "update"
+        },
+        {
+          "label": "Generate Report",
+          "value": "report"
+        },
+        {
+          "label": "Query Similar Images",
+          "value": "query"
+        }
+      ]
+    },
+    {
+      "type": "promptString",
+      "id": "imagePath",
+      "description": "Enter image path to query",
+      "default": "Your Image Path Here"
+    },
+    {
+      "type": "promptString",
+      "id": "topK",
+      "description": "Enter number of similar images to return",
+      "default": "5"
+    }
+  ]
+}
