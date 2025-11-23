@@ -273,7 +273,7 @@ class GameAssetManager:
         logger.info("步骤1: 遍历图片文件...")
         image_paths = GameAssetManager.get_image_paths(self.asset_directories)
         if not image_paths:
-            raise ValueError(f"未找到有效的图片文件")
+            raise ValueError(f"未找到有效的图片文件，请检查目录 {self.asset_directories} 是否包含图片文件")
 
         # 2. 尝试加载索引缓存
         logger.info("步骤2: 尝试加载索引缓存...")

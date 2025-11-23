@@ -189,9 +189,9 @@ def batch_process(image_path, dct_sizes, output_dir):
 
 if __name__ == "__main__":
     # 配置参数
-    IMAGE_PATH = r"F:\WorkSpace\image_matching_dct\Share\PixPin_2025-11-22_17-25-15_256.png"
-    OUTPUT_DIR = r"F:\WorkSpace\image_matching_dct\Share\dct_visualization"
-    DCT_SIZES = [8, 16, 32, 64]  # 可以根据需要调整
+    IMAGE_PATH = r"E:\WorkSpace\image-matching\Share\Gift_256.png"
+    OUTPUT_DIR = r"E:\WorkSpace\image-matching\Share"
+    DCT_SIZES = [8, 32, 64, 256]  # 用于文档展示的尺寸
 
     # 执行批量处理
     batch_process(IMAGE_PATH, DCT_SIZES, OUTPUT_DIR)
