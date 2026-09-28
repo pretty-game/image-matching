@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>图片查重控制台</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">IMG</span>
+    <span>图片查重控制台</span>
+    <span class="sub">image_matching_dct</span>
+  </div>
+  <div class="top-status">
+    <span class="status-item"><span id="dot-cache" class="dot"></span>索引缓存</span>
+    <span class="status-item"><span id="dot-task" class="dot"></span>任务</span>
+  </div>
+</header>
+
+<nav class="tabs">
+  <button class="tab active" data-tab="overview">总览</button>
+  <button class="tab" data-tab="update">图片库更新</button>
+  <button class="tab" data-tab="query">相似查询</button>
+  <button class="tab" data-tab="reports">相似报告</button>
+  <button class="tab" data-tab="tasks">任务日志</button>
+</nav>
+
+<main>
+
+<!-- ================= 总览 ================= -->
+<section id="tab-overview" class="tab-panel active">
+  <div id="cfg-error" class="banner error hidden"></div>
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-head"><h3>配置参数</h3><button id="btn-reload" class="btn ghost sm">刷新</button></div>
+      <table class="kv" id="kv-config"><tbody></tbody></table>
+    </div>
+    <div class="card">
+      <div class="card-head"><h3>索引缓存</h3><span id="pill-index" class="pill">检测中</span></div>
+      <table class="kv" id="kv-cache"><tbody></tbody></table>
+      <div class="card-actions"><button class="btn primary sm" data-goto="update">前往更新</button></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h3>图片库</h3></div>
+      <table class="kv" id="kv-library"><tbody></tbody></table>
+    </div>
+    <div class="card">
+      <div class="card-head"><h3>相似报告</h3></div>
+      <table class="kv" id="kv-reports"><tbody></tbody></table>
+      <div class="card-actions"><button class="btn primary sm" data-goto="reports">查看报告</button></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 图片库更新 ================= -->
+<section id="tab-update" class="tab-panel">
+  <div class="card">
+    <div class="card-head"><h3>更新 / 构建图片库</h3><span id="pill-ready-update" class="pill">检测中</span></div>
+    <p class="desc">
+      执行 <code>python app.py update</code>：扫描资产目录 → 提取 DCT 特征（RGBA 自适应权重）→
+      特征降维 → KMeans 聚类 → 写入索引缓存。已有有效缓存且变更 &lt; 10% 时自动走<b>增量更新</b>；
+      首次构建需要提取全部特征并聚类，耗时较长，请耐心等待。
+    </p>
+    <div class="row">
+      <button id="btn-update" class="btn primary">🚀 开始更新图片库</button>
+      <button id="btn-terminate" class="btn danger hidden">终止任务</button>
+      <span id="update-state" class="muted"></span>
+    </div>
+  </div>
+  <div class="card console-card hidden" id="run-console-card">
+    <div class="card-head">
+      <h3>运行日志 <span id="run-task-label" class="muted"></span></h3>
+      <span id="run-task-pill" class="pill"></span>
+    </div>
+    <pre id="run-console" class="console"></pre>
+  </div>
+</section>
+
+<!-- ================= 相似查询 ================= -->
+<section id="tab-query" class="tab-panel">
+  <div class="card">
+    <div class="card-head"><h3>相似图片查询</h3><span id="pill-ready-query" class="pill">检测中</span></div>
+    <div class="form-grid">
+      <label class="span2">查询图片路径
+        <input id="q-path" class="input" placeholder="例如 F:/LetsGoDevelop/LetsGo/_Art/UI/Images/T_xxx.png">
+      </label>
+      <label>Top K<input id="q-topk" class="input" type="number" value="10" min="1" max="100"></label>
+      <label>相似度阈值<input id="q-threshold" class="input" type="number" value="0.90" step="0.01" min="0" max="1"></label>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button id="btn-query" class="btn primary">🔍 查询相似图片</button>
+      <span id="q-status" class="muted"></span>
+    </div>
+    <details class="lib-search">
+      <summary>🔍 从图片库中搜索文件（点击填入路径）</summary>
+      <input id="lib-search" class="input" placeholder="输入文件名关键字，如 Bg / Icon / Farm ...">
+      <div id="lib-results" class="lib-results"></div>
+    </details>
+  </div>
+
+  <div id="query-result" class="hidden">
+    <div class="card">
+      <div class="card-head"><h3>查询结果 <span id="q-summary" class="muted"></span></h3></div>
+      <div class="query-layout">
+        <div class="q-origin">
+          <div class="q-origin-title">查询图片</div>
+          <img id="q-origin-img" class="q-origin-img" alt="查询图片">
+          <div id="q-origin-name" class="filename"></div>
+        </div>
+        <div id="q-matches" class="match-grid"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 相似报告 ================= -->
+<section id="tab-reports" class="tab-panel">
+  <div class="card">
+    <div class="card-head"><h3>生成相似报告</h3><span id="report-run-state" class="pill">空闲</span></div>
+    <p class="desc">
+      执行 <code>python app.py report</code>，输出到 <code>reports/</code> 目录。
+      默认使用基于聚类的优化分组算法（比原始遍历快一个数量级），HTML 报告内嵌缩略图可直接浏览器打开。
+    </p>
+    <div class="form-grid">
+      <label>相似度阈值<input id="r-threshold" class="input" type="number" value="0.90" step="0.01" min="0" max="1"></label>
+      <label>最小组大小<input id="r-minsize" class="input" type="number" value="2" min="2"></label>
+      <label>最大组数<input id="r-maxgroups" class="input" type="number" placeholder="不限"></label>
+      <label>格式
+        <select id="r-format" class="input">
+          <option value="html">HTML</option>
+          <option value="json">JSON</option>
+        </select>
+      </label>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <label class="check"><input type="checkbox" id="r-lightweight"> 轻量模式（不生成缩略图，更快）</label>
+      <label class="check"><input type="checkbox" id="r-noopt"> 原始遍历算法（慢，仅调试）</label>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button id="btn-report" class="btn primary">📊 生成报告</button>
+      <span id="report-state-text" class="muted"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h3>历史报告</h3><button id="btn-refresh-reports" class="btn ghost sm">刷新</button></div>
+    <table class="table">
+      <thead><tr><th>生成时间</th><th>文件</th><th>类型</th><th>大小</th><th>操作</th></tr></thead>
+      <tbody id="reports-body"></tbody>
+    </table>
+    <div id="reports-empty" class="empty hidden">暂无报告，先在上方生成。</div>
+  </div>
+</section>
+
+<!-- ================= 任务日志 ================= -->
+<section id="tab-tasks" class="tab-panel">
+  <div class="card">
+    <div class="card-head"><h3>任务列表</h3><span class="muted">本次服务会话内触发过的任务</span></div>
+    <div id="task-list"><div class="empty">暂无任务</div></div>
+  </div>
+</section>
+
+</main>
+
+<div id="toasts"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

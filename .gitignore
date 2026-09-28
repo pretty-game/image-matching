@@ -13,3 +13,9 @@ reports/
 temp/
 tmp/
 *.tmp
+
+# webapp
+webapp/thumb_cache/
+
+# 归档的临时脚本
+archive/

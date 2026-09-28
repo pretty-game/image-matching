@@ -181,6 +181,19 @@ class GameAssetManager:
     # region Cache
 
     @staticmethod
+    def resolve_cache_dir(cache_dir: str, config_path: str) -> str:
+        """
+        解析缓存目录：相对路径以项目根目录（config 文件上一级）为基准，
+        避免受进程启动位置（CWD）影响。例如从 webapp/ 目录启动服务时，
+        './cache' 不会被错误解析到 webapp/cache 下。
+        """
+        p = Path(cache_dir)
+        if not p.is_absolute():
+            project_root = Path(config_path).resolve().parent.parent
+            p = project_root / p
+        return str(p)
+
+    @staticmethod
     def get_change_record(cache_file_paths: List[str], cache_file_last_modified_times: List[str], cache_file_crc32s: List[str], current_file_paths: List[str]) -> Dict[str, List[str]]:
         """
         根据缓存的 file_crc32 状态，返回增删改列表
@@ -277,8 +290,9 @@ class GameAssetManager:
 
         # 2. 尝试加载索引缓存
         logger.info("步骤2: 尝试加载索引缓存...")
-        cache_dir = self.config.get(
-            'performance', {}).get('cache_dir', './cache')
+        cache_dir = GameAssetManager.resolve_cache_dir(
+            self.config.get('performance', {}).get('cache_dir', './cache'),
+            self.config_path)
         index_data = None
         directories_hash = GameAssetManager.get_directories_hash(
             self.asset_directories)

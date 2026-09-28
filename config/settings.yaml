@@ -4,7 +4,7 @@
 data_sources:
   # 图片目录列表（按优先级排序）
   asset_directories:
-    - "C:\\YourPathToImage"
+    - "G:/WorkSpace/Images/UI/Images"
 
 feature_extraction:
   # 图片预处理统一尺寸

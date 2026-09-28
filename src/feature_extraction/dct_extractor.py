@@ -4,10 +4,12 @@ DCT特征提取模块
 实现多通道DCT变换特征提取，专门优化处理RGBA游戏资产
 """
 import hashlib
+import io
 import logging
+import multiprocessing
 import os
-from pathlib import Path
 import pickle
+import struct
 import zlib
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -17,13 +19,54 @@ from scipy.fft import dct
 
 logger = logging.getLogger(__name__)
 
+# 触发并行的最小图片数量（进程池启动约需 2s，图片太少不划算，直接串行）
+PARALLEL_MIN_IMAGES = 1000
+# 默认最大工作进程数（可用环境变量 DCT_WORKERS 覆盖）
+DEFAULT_MAX_WORKERS = 16
+
+
+def _extract_image_worker(args: Tuple[str, str, int, int]):
+    """
+    多进程 worker：提取单张图片的 DCT 特征（含缓存读写）。
+
+    必须是模块级函数以满足 Windows spawn 序列化要求。
+    返回: (img_path, features 或 None, file_last_modified, file_crc32, from_cache)
+    """
+    img_path, cache_dir, image_size, dct_size = args
+    try:
+        dct_cache_data, from_cache = DCTFeatureExtractor.get_dct_data(
+            img_path, cache_dir, image_size, dct_size)
+        if dct_cache_data is None:
+            return (img_path, None, None, None, from_cache)
+        return (img_path,
+                dct_cache_data['dct_features'],
+                dct_cache_data['file_last_modified'],
+                dct_cache_data['file_crc32'],
+                from_cache)
+    except Exception as e:
+        # 单张图片失败不影响整体任务
+        logger.warning(f"处理图片失败 {img_path}: {e}")
+        return (img_path, None, None, None, False)
+
+
 class DCTFeatureExtractor:
     """多通道DCT特征提取器，专门处理RGBA游戏资产图片"""
 
     @staticmethod
+    def _resolve_worker_count() -> int:
+        """决定并行工作进程数：环境变量 DCT_WORKERS 优先，否则 CPU 核数（上限 16）"""
+        env = os.environ.get('DCT_WORKERS')
+        if env:
+            try:
+                return max(1, int(env))
+            except ValueError:
+                logger.warning(f"环境变量 DCT_WORKERS={env} 不是合法数字，忽略")
+        return max(1, min(os.cpu_count() or 4, DEFAULT_MAX_WORKERS))
+
+    @staticmethod
     def get_dct_features(image_paths: List[str], cache_dir: str, image_size: int, dct_size: int) -> Tuple[np.ndarray, List[str], List[str], List[str]]:
         """
-        提取一组图片的DCT特征，支持缓存机制
+        提取一组图片的DCT特征，支持缓存机制（图片数量多时自动多进程并行）
         Args:
             image_paths: 图片路径列表
             cache_dir: 缓存目录
@@ -37,21 +80,46 @@ class DCTFeatureExtractor:
                 - file_crc32_list: List of CRC32 checksums for each image file
         """
 
+        n_total = len(image_paths)
+        if n_total == 0:
+            return np.empty((0, dct_size * dct_size * 4), dtype=np.float32), [], [], []
+
+        workers = DCTFeatureExtractor._resolve_worker_count()
+        # 图片较少时逐张打日志；大规模时每 100 张打一次，避免日志爆炸
+        log_every = 1 if n_total <= 1000 else 100
+
+        items = None
+        if workers > 1 and n_total >= PARALLEL_MIN_IMAGES:
+            logger.info(f"启用多进程并行提取特征: {workers} 个工作进程, 共 {n_total} 张图片")
+            try:
+                items = DCTFeatureExtractor._extract_parallel(
+                    image_paths, cache_dir, image_size, dct_size, workers, log_every)
+            except Exception as e:
+                logger.warning(f"并行提取失败({e})，回退到串行模式")
+                items = None
+
+        if items is None:
+            items = []
+            for idx, img_path in enumerate(image_paths):
+                if log_every == 1 or (idx + 1) % log_every == 0:
+                    logger.info(f"处理图片 {idx+1}/{n_total}: {img_path}")
+                items.append(_extract_image_worker(
+                    (img_path, cache_dir, image_size, dct_size)))
+
         features_list = []
         path_list = []
         file_last_modified_times = []
         file_crc32_list = []
         cache_counter = 0
-        for idx, img_path in enumerate(image_paths):
-            logger.info(f"处理图片 {idx+1}/{len(image_paths)}: {img_path}")
-            dct_cache_data, from_cache = DCTFeatureExtractor.get_dct_data(img_path, cache_dir, image_size, dct_size)
-            if dct_cache_data is not None:
-                features_list.append(dct_cache_data['dct_features'])
-                path_list.append(img_path)
-                file_last_modified_times.append(dct_cache_data['file_last_modified'])
-                file_crc32_list.append(dct_cache_data['file_crc32'])
-                if from_cache:
-                    cache_counter += 1
+        for img_path, dct_features, file_last_modified, file_crc32, from_cache in items:
+            if dct_features is None:
+                continue
+            features_list.append(dct_features)
+            path_list.append(img_path)
+            file_last_modified_times.append(file_last_modified)
+            file_crc32_list.append(file_crc32)
+            if from_cache:
+                cache_counter += 1
 
         if not features_list:
             logger.info("没有成功提取到任何DCT特征, 请检查图片文件是否有效")
@@ -62,6 +130,20 @@ class DCTFeatureExtractor:
         logger.info(f"DCT特征缓存命中率: {cache_counter}/{len(path_list)}")
         logger.info(f"DCT特征准备完成，有效图片: {len(path_list)}, 特征形状: {features.shape}")
         return features, path_list, file_last_modified_times, file_crc32_list
+
+    @staticmethod
+    def _extract_parallel(image_paths: List[str], cache_dir: str, image_size: int,
+                          dct_size: int, workers: int, log_every: int) -> List[tuple]:
+        """多进程并行提取（结果顺序与输入一致）"""
+        args = [(p, cache_dir, image_size, dct_size) for p in image_paths]
+        chunksize = max(1, len(args) // (workers * 8))
+        items = []
+        with multiprocessing.Pool(processes=workers) as pool:
+            for idx, item in enumerate(pool.imap(_extract_image_worker, args, chunksize)):
+                if log_every == 1 or (idx + 1) % log_every == 0:
+                    logger.info(f"已提取特征 {idx+1}/{len(args)}: {item[0]}")
+                items.append(item)
+        return items
 
     @staticmethod
     def get_dct_data(image_path: str, cache_dir: str, image_size: int, dct_size: int) -> Tuple[Optional[Dict[str, Any]], bool]:
@@ -125,6 +207,22 @@ class DCTFeatureExtractor:
                 file_data = np.frombuffer(f.read(), dtype=np.uint8)
             img = cv2.imdecode(file_data, cv2.IMREAD_UNCHANGED)
 
+            # cv2 解码失败时的两级回退：
+            # 1) PNG 清洗：剔除超大元数据块（美术工具可能嵌入数十 MB 的 iTXt 文本块）后重试
+            # 2) Pillow 解码：覆盖 cv2 不支持的格式（如 TGA）
+            if img is None:
+                sanitized = DCTFeatureExtractor._sanitize_png_chunks(file_data)
+                if sanitized is not None:
+                    img = cv2.imdecode(sanitized, cv2.IMREAD_UNCHANGED)
+                    if img is None:
+                        img = DCTFeatureExtractor._decode_with_pillow(sanitized)
+            if img is None:
+                img = DCTFeatureExtractor._decode_with_pillow(file_data)
+
+            if img is None:
+                logger.warning(f"无法读取图片: {image_path}")
+                return None
+
             if img is None:
                 logger.warning(f"无法读取图片: {image_path}")
                 return None
@@ -138,6 +236,65 @@ class DCTFeatureExtractor:
             return img_normalized
         except Exception as e:
             logger.warning(f"跳过图片 {os.path.basename(image_path)}: {e}")
+            return None
+
+    # PNG 辅助块白名单：影响色彩/透明解释的小块需要保留
+    _PNG_KEEP_ANCILLARY = {'tRNS', 'gAMA', 'sRGB', 'sBIT', 'iCCP', 'cHRM'}
+
+    @staticmethod
+    def _sanitize_png_chunks(file_data: np.ndarray) -> Optional[np.ndarray]:
+        """
+        剔除 PNG 中的大体积辅助 chunk（美术工具可能嵌入数十 MB 的 iTXt 文本块，
+        导致 cv2 拒绝解码），返回保留必要数据的新文件内容。非 PNG 数据返回 None。
+        """
+        try:
+            data = file_data.tobytes()
+            if len(data) < 8 or data[:8] != b'\x89PNG\r\n\x1a\n':
+                return None
+            out = bytearray(data[:8])
+            i = 8
+            while i + 12 <= len(data):
+                (ln,) = struct.unpack('>I', data[i:i + 4])
+                name = data[i + 4:i + 8].decode('latin1', 'replace')
+                end = i + 12 + ln
+                if end > len(data):
+                    return None  # chunk 数据不完整，视为无效
+                is_critical = name[:1].isupper()
+                is_textual = name in ('iTXt', 'tEXt', 'zTXt', 'eXIf', 'tIME')
+                # 保留：关键 chunk、色彩相关辅助块、小体积无害辅助块；丢弃文本/元数据块
+                if is_critical or name in DCTFeatureExtractor._PNG_KEEP_ANCILLARY \
+                        or (not is_textual and ln <= 65536):
+                    out += data[i:end]
+                i = end
+                if name == 'IEND':
+                    break
+            return np.frombuffer(bytes(out), dtype=np.uint8)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _decode_with_pillow(file_data: np.ndarray) -> Optional[np.ndarray]:
+        """
+        使用 Pillow 解码（cv2 失败时的回退），覆盖 cv2 不支持的格式（如 TGA）。
+        返回与 cv2.imdecode 一致的 BGR/BGRA/灰度数组。
+        """
+        try:
+            from PIL import Image
+            with Image.open(io.BytesIO(file_data.tobytes())) as im:
+                im.load()
+                if im.mode == 'P':
+                    im = im.convert('RGBA')
+                elif im.mode not in ('RGB', 'RGBA', 'L'):
+                    im = im.convert('RGBA')
+                arr = np.asarray(im)
+            if arr.ndim == 2:
+                return arr
+            if arr.ndim == 3 and arr.shape[2] == 4:
+                return cv2.cvtColor(arr, cv2.COLOR_RGBA2BGRA)
+            if arr.ndim == 3 and arr.shape[2] == 3:
+                return cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+            return None
+        except Exception:
             return None
 
     @staticmethod

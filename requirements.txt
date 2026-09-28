@@ -7,3 +7,6 @@ Pillow>=8.0.0
 # Machine Learning and Data Processing
 scikit-learn>=1.0.0
 PyYAML>=6.0
+
+# Web UI (webapp/)
+flask>=2.2
